@@ -20,12 +20,15 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
 // StateDB is an EVM database for full state querying.
 type StateDB interface {
 	CreateAccount(common.Address)
+
+	RawDump(excludeCode, excludeStorage, excludeMissingPreimages bool) state.Dump
 
 	SubBalance(common.Address, *big.Int)
 	AddBalance(common.Address, *big.Int)
