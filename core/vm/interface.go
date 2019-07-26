@@ -17,19 +17,18 @@
 package vm
 
 import (
+	"github.com/ethereum/go-ethereum/core/state"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
 // StateDB is an EVM database for full state querying.
 type StateDB interface {
+
+	RawDump(bool,bool,bool) state.Dump
 	CreateAccount(common.Address)
-
-	RawDump() state.Dump
-
 	SubBalance(common.Address, *big.Int)
 	AddBalance(common.Address, *big.Int)
 	GetBalance(common.Address) *big.Int
@@ -66,7 +65,7 @@ type StateDB interface {
 	AddLog(*types.Log)
 	AddPreimage(common.Hash, []byte)
 
-	ForEachStorage(common.Address, func(common.Hash, common.Hash) bool)
+	ForEachStorage(common.Address, func(common.Hash, common.Hash) bool) error
 }
 
 // CallContext provides a basic interface for the EVM calling conventions. The EVM
