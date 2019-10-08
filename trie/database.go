@@ -278,7 +278,7 @@ func (db *Database) DiskDB() DatabaseReader {
 	return db.diskdb
 }
 
-// DiskDB retrieves the persistent storage backing the trie database.
+// SetDiskDB sets the persistent storage backing the trie database.
 func (db *Database) SetDiskDB(diskdb ethdb.Database) {
 	db.diskdb = diskdb
 }
