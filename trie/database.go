@@ -278,6 +278,11 @@ func (db *Database) DiskDB() DatabaseReader {
 	return db.diskdb
 }
 
+// DiskDB retrieves the persistent storage backing the trie database.
+func (db *Database) SetDiskDB(diskdb ethdb.Database) {
+	db.diskdb = diskdb
+}
+
 // InsertBlob writes a new reference tracked blob to the memory database if it's
 // yet unknown. This method should only be used for non-trie nodes that require
 // reference counting, since trie nodes are garbage collected directly through
