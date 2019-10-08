@@ -80,11 +80,10 @@ type Trie interface {
 // high level trie abstraction.
 func NewDatabase(db ethdb.Database) Database {
 	csc, _ := lru.New(codeSizeCacheSize)
-	c := &cachingDB{
+	return &cachingDB{
 		db:            trie.NewDatabase(db),
 		codeSizeCache: csc,
 	}
-	return c
 }
 
 type cachingDB struct {
