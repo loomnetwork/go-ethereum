@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"sync"
 	"time"
@@ -45,7 +44,7 @@ var (
 	memcacheCommitNodesMeter = metrics.NewRegisteredMeter("trie/memcache/commit/nodes", nil)
 	memcacheCommitSizeMeter  = metrics.NewRegisteredMeter("trie/memcache/commit/size", nil)
 
-	unsorting = (os.Getenv("GOETH_UNSORTING") == "true")
+	EnableTrieDatabasePreimageKeysSorting = true
 )
 
 // secureKeyPrefix is the database key prefix used to store trie node preimages.
@@ -607,10 +606,10 @@ func (db *Database) Cap(limit common.StorageSize) error {
 }
 
 func (db *Database) Commit(node common.Hash, report bool) error {
-	if unsorting {
-		return db.unsortCommit(node, report)
+	if EnableTrieDatabasePreimageKeysSorting {
+		return db.sortCommit(node, report)
 	}
-	return db.sortCommit(node, report)
+	return db.unsortCommit(node, report)
 }
 
 // Commit iterates over all the children of a particular node, writes them out
