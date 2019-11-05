@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"os"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -28,7 +29,7 @@ import (
 )
 
 var emptyCodeHash = crypto.Keccak256(nil)
-var sorting = false
+var unsorting = (os.Getenv("GOETH_UNSORTING") == "true")
 
 type Code []byte
 
@@ -215,7 +216,7 @@ func (self *stateObject) SetState(db Database, key, value common.Hash) {
 
 func (self *stateObject) setState(key, value common.Hash) {
 	self.dirtyStorage[key] = value
-	if sorting {
+	if !unsorting {
 		for _, k := range self.dirtyStorageKeys {
 			if k == key {
 				return
@@ -228,7 +229,7 @@ func (self *stateObject) setState(key, value common.Hash) {
 // updateTrie writes cached storage modifications into the object's storage trie.
 func (self *stateObject) updateTrie(db Database) Trie {
 	tr := self.getTrie(db)
-	if sorting {
+	if !unsorting {
 		// Iterate through the storage keys in deterministic order to ensure the storage trie is
 		// identical across machines
 		for _, key := range self.dirtyStorageKeys {
@@ -337,7 +338,7 @@ func (self *stateObject) deepCopy(db *StateDB) *stateObject {
 	}
 	stateObject.code = self.code
 	stateObject.dirtyStorage = self.dirtyStorage.Copy()
-	if sorting {
+	if !unsorting {
 		stateObject.dirtyStorageKeys = append([]common.Hash{}, self.dirtyStorageKeys...)
 	}
 	stateObject.originStorage = self.originStorage.Copy()

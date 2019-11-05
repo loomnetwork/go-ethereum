@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -43,6 +44,8 @@ var (
 	memcacheCommitTimeTimer  = metrics.NewRegisteredResettingTimer("trie/memcache/commit/time", nil)
 	memcacheCommitNodesMeter = metrics.NewRegisteredMeter("trie/memcache/commit/nodes", nil)
 	memcacheCommitSizeMeter  = metrics.NewRegisteredMeter("trie/memcache/commit/size", nil)
+
+	unsorting = (os.Getenv("GOETH_UNSORTING") == "true")
 )
 
 // secureKeyPrefix is the database key prefix used to store trie node preimages.
@@ -603,11 +606,18 @@ func (db *Database) Cap(limit common.StorageSize) error {
 	return nil
 }
 
+func (db *Database) Commit(node common.Hash, report bool) error {
+	if unsorting {
+		return db.unsortCommit(node, report)
+	}
+	return db.sortCommit(node, report)
+}
+
 // Commit iterates over all the children of a particular node, writes them out
 // to disk, forcefully tearing down all references in both directions.
 //
 // As a side effect, all pre-images accumulated up to this point are also written.
-func (db *Database) Commit(node common.Hash, report bool) error {
+func (db *Database) unsortCommit(node common.Hash, report bool) error {
 	// Create a database batch to flush persistent data out. It is important that
 	// outside code doesn't see an inconsistent state (referenced data removed from
 	// memory cache during commit but not yet in persistent storage). This is ensured
@@ -677,7 +687,7 @@ func (db *Database) Commit(node common.Hash, report bool) error {
 // to disk, forcefully tearing down all references in both directions.
 //
 // As a side effect, all pre-images accumulated up to this point are also written.
-func (db *Database) Commit2(node common.Hash, report bool) error {
+func (db *Database) sortCommit(node common.Hash, report bool) error {
 	// Create a database batch to flush persistent data out. It is important that
 	// outside code doesn't see an inconsistent state (referenced data removed from
 	// memory cache during commit but not yet in persistent storage). This is ensured
