@@ -146,6 +146,11 @@ func (self *StateDB) GetLogs(hash common.Hash) []*types.Log {
 	return self.logs[hash]
 }
 
+func (self *StateDB) ResetLogs() {
+	self.logs = make(map[common.Hash][]*types.Log)
+	self.logSize = 0
+}
+
 func (self *StateDB) Logs() []*types.Log {
 	var logs []*types.Log
 	for _, lgs := range self.logs {
