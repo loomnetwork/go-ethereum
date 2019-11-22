@@ -28,6 +28,7 @@ import (
 )
 
 var emptyCodeHash = crypto.Keccak256(nil)
+var EnableStateObjectDirtyStorageKeysSorting = true
 
 type Code []byte
 
@@ -77,9 +78,9 @@ type stateObject struct {
 	trie Trie // storage trie, which becomes non-nil on first access
 	code Code // contract bytecode, which gets set when code is loaded
 
-	originStorage Storage // Storage cache of original entries to dedup rewrites
-	dirtyStorage  Storage // Storage entries that need to be flushed to disk
-
+	originStorage    Storage // Storage cache of original entries to dedup rewrites
+	dirtyStorage     Storage // Storage entries that need to be flushed to disk
+	dirtyStorageKeys []common.Hash
 	// Cache flags.
 	// When an object is marked suicided it will be delete from the trie
 	// during the "update" phase of the state transition.
@@ -212,27 +213,58 @@ func (self *stateObject) SetState(db Database, key, value common.Hash) {
 
 func (self *stateObject) setState(key, value common.Hash) {
 	self.dirtyStorage[key] = value
+	if EnableStateObjectDirtyStorageKeysSorting {
+		for _, k := range self.dirtyStorageKeys {
+			if k == key {
+				return
+			}
+		}
+		self.dirtyStorageKeys = append(self.dirtyStorageKeys, key)
+	}
 }
 
 // updateTrie writes cached storage modifications into the object's storage trie.
 func (self *stateObject) updateTrie(db Database) Trie {
 	tr := self.getTrie(db)
-	for key, value := range self.dirtyStorage {
-		delete(self.dirtyStorage, key)
+	if EnableStateObjectDirtyStorageKeysSorting {
+		// Iterate through the storage keys in deterministic order to ensure the storage trie is
+		// identical across machines
+		for _, key := range self.dirtyStorageKeys {
+			value := self.dirtyStorage[key]
+			delete(self.dirtyStorage, key)
 
-		// Skip noop changes, persist actual changes
-		if value == self.originStorage[key] {
-			continue
-		}
-		self.originStorage[key] = value
+			// Skip noop changes, persist actual changes
+			if value == self.originStorage[key] {
+				continue
+			}
+			self.originStorage[key] = value
 
-		if (value == common.Hash{}) {
-			self.setError(tr.TryDelete(key[:]))
-			continue
+			if (value == common.Hash{}) {
+				self.setError(tr.TryDelete(key[:]))
+				continue
+			}
+			// Encoding []byte cannot fail, ok to ignore the error.
+			v, _ := rlp.EncodeToBytes(bytes.TrimLeft(value[:], "\x00"))
+			self.setError(tr.TryUpdate(key[:], v))
 		}
-		// Encoding []byte cannot fail, ok to ignore the error.
-		v, _ := rlp.EncodeToBytes(bytes.TrimLeft(value[:], "\x00"))
-		self.setError(tr.TryUpdate(key[:], v))
+	} else {
+		for key, value := range self.dirtyStorage {
+			delete(self.dirtyStorage, key)
+
+			// Skip noop changes, persist actual changes
+			if value == self.originStorage[key] {
+				continue
+			}
+			self.originStorage[key] = value
+
+			if (value == common.Hash{}) {
+				self.setError(tr.TryDelete(key[:]))
+				continue
+			}
+			// Encoding []byte cannot fail, ok to ignore the error.
+			v, _ := rlp.EncodeToBytes(bytes.TrimLeft(value[:], "\x00"))
+			self.setError(tr.TryUpdate(key[:], v))
+		}
 	}
 	return tr
 }
@@ -303,6 +335,9 @@ func (self *stateObject) deepCopy(db *StateDB) *stateObject {
 	}
 	stateObject.code = self.code
 	stateObject.dirtyStorage = self.dirtyStorage.Copy()
+	if EnableStateObjectDirtyStorageKeysSorting {
+		stateObject.dirtyStorageKeys = append([]common.Hash{}, self.dirtyStorageKeys...)
+	}
 	stateObject.originStorage = self.originStorage.Copy()
 	stateObject.suicided = self.suicided
 	stateObject.dirtyCode = self.dirtyCode
