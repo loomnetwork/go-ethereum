@@ -605,128 +605,69 @@ func (db *Database) Cap(limit common.StorageSize) error {
 	return nil
 }
 
+// Commit iterates over all the children of a particular node, writes them out
+// to disk, forcefully tearing down all references in both directions.
+//
+// As a side effect, all pre-images accumulated up to this point are also written.
 func (db *Database) Commit(node common.Hash, report bool) error {
+	// Create a database batch to flush persistent data out. It is important that
+	// outside code doesn't see an inconsistent state (referenced data removed from
+	// memory cache during commit but not yet in persistent storage). This is ensured
+	// by only uncaching existing data when the database write finalizes.
+	db.lock.RLock()
+
+	start := time.Now()
+	batch := db.diskdb.NewBatch()
+
 	if EnableTrieDatabasePreimageKeysSorting {
-		return db.sortCommit(node, report)
-	}
-	return db.unsortCommit(node, report)
-}
-
-// Commit iterates over all the children of a particular node, writes them out
-// to disk, forcefully tearing down all references in both directions.
-//
-// As a side effect, all pre-images accumulated up to this point are also written.
-func (db *Database) unsortCommit(node common.Hash, report bool) error {
-	// Create a database batch to flush persistent data out. It is important that
-	// outside code doesn't see an inconsistent state (referenced data removed from
-	// memory cache during commit but not yet in persistent storage). This is ensured
-	// by only uncaching existing data when the database write finalizes.
-	db.lock.RLock()
-
-	start := time.Now()
-	batch := db.diskdb.NewBatch()
-
-	// Move all of the accumulated preimages into a write batch
-	for hash, preimage := range db.preimages {
-		if err := batch.Put(db.secureKey(hash[:]), preimage); err != nil {
-			log.Error("Failed to commit preimage from trie database", "err", err)
-			db.lock.RUnlock()
-			return err
+		type kvPair struct {
+			key   []byte
+			value []byte
 		}
-		if batch.ValueSize() > ethdb.IdealBatchSize {
-			if err := batch.Write(); err != nil {
-				return err
-			}
-			batch.Reset()
+
+		// Sort preimages to ensure they are written out in deterministic order
+		orderedPreimages := make([]kvPair, 0, len(db.preimages))
+		for hash := range db.preimages {
+			orderedPreimages = append(orderedPreimages, kvPair{
+				key:   common.CopyBytes(hash[:]),
+				value: db.preimages[hash],
+			})
 		}
-	}
-	// Move the trie itself into the batch, flushing if enough data is accumulated
-	nodes, storage := len(db.nodes), db.nodesSize
-	if err := db.commit(node, batch); err != nil {
-		log.Error("Failed to commit trie from trie database", "err", err)
-		db.lock.RUnlock()
-		return err
-	}
-	// Write batch ready, unlock for readers during persistence
-	if err := batch.Write(); err != nil {
-		log.Error("Failed to write trie to disk", "err", err)
-		db.lock.RUnlock()
-		return err
-	}
-	db.lock.RUnlock()
-
-	// Write successful, clear out the flushed data
-	db.lock.Lock()
-	defer db.lock.Unlock()
-
-	db.preimages = make(map[common.Hash][]byte)
-	db.preimagesSize = 0
-
-	db.uncache(node)
-
-	memcacheCommitTimeTimer.Update(time.Since(start))
-	memcacheCommitSizeMeter.Mark(int64(storage - db.nodesSize))
-	memcacheCommitNodesMeter.Mark(int64(nodes - len(db.nodes)))
-
-	logger := log.Info
-	if !report {
-		logger = log.Debug
-	}
-	logger("Persisted trie from memory database", "nodes", nodes-len(db.nodes)+int(db.flushnodes), "size", storage-db.nodesSize+db.flushsize, "time", time.Since(start)+db.flushtime,
-		"gcnodes", db.gcnodes, "gcsize", db.gcsize, "gctime", db.gctime, "livenodes", len(db.nodes), "livesize", db.nodesSize)
-
-	// Reset the garbage collection statistics
-	db.gcnodes, db.gcsize, db.gctime = 0, 0, 0
-	db.flushnodes, db.flushsize, db.flushtime = 0, 0, 0
-
-	return nil
-}
-
-// Commit iterates over all the children of a particular node, writes them out
-// to disk, forcefully tearing down all references in both directions.
-//
-// As a side effect, all pre-images accumulated up to this point are also written.
-func (db *Database) sortCommit(node common.Hash, report bool) error {
-	// Create a database batch to flush persistent data out. It is important that
-	// outside code doesn't see an inconsistent state (referenced data removed from
-	// memory cache during commit but not yet in persistent storage). This is ensured
-	// by only uncaching existing data when the database write finalizes.
-	db.lock.RLock()
-
-	start := time.Now()
-	batch := db.diskdb.NewBatch()
-
-	type kvPair struct {
-		key   []byte
-		value []byte
-	}
-
-	// Sort preimages to ensure they are written out in deterministic order
-	orderedPreimages := make([]kvPair, 0, len(db.preimages))
-	for hash := range db.preimages {
-		orderedPreimages = append(orderedPreimages, kvPair{
-			key:   common.CopyBytes(hash[:]),
-			value: db.preimages[hash],
+		sort.Slice(orderedPreimages, func(j, k int) bool {
+			return bytes.Compare(orderedPreimages[j].key, orderedPreimages[k].key) < 0
 		})
-	}
-	sort.Slice(orderedPreimages, func(j, k int) bool {
-		return bytes.Compare(orderedPreimages[j].key, orderedPreimages[k].key) < 0
-	})
 
-	// Move all of the accumulated preimages into a write batch
-	for _, preimage := range orderedPreimages {
-		if err := batch.Put(db.secureKey(preimage.key), preimage.value); err != nil {
-			log.Error("Failed to commit preimage from trie database", "err", err)
-			db.lock.RUnlock()
-			return err
-		}
-		if batch.ValueSize() > ethdb.IdealBatchSize {
-			if err := batch.Write(); err != nil {
+		// Move all of the accumulated preimages into a write batch
+		for _, preimage := range orderedPreimages {
+			if err := batch.Put(db.secureKey(preimage.key), preimage.value); err != nil {
+				log.Error("Failed to commit preimage from trie database", "err", err)
+				db.lock.RUnlock()
 				return err
 			}
-			batch.Reset()
+			if batch.ValueSize() > ethdb.IdealBatchSize {
+				if err := batch.Write(); err != nil {
+					return err
+				}
+				batch.Reset()
+			}
+		}
+	} else {
+		// Move all of the accumulated preimages into a write batch
+		for hash, preimage := range db.preimages {
+			if err := batch.Put(db.secureKey(hash[:]), preimage); err != nil {
+				log.Error("Failed to commit preimage from trie database", "err", err)
+				db.lock.RUnlock()
+				return err
+			}
+			if batch.ValueSize() > ethdb.IdealBatchSize {
+				if err := batch.Write(); err != nil {
+					return err
+				}
+				batch.Reset()
+			}
 		}
 	}
+
 	// Move the trie itself into the batch, flushing if enough data is accumulated
 	nodes, storage := len(db.nodes), db.nodesSize
 	if err := db.commit(node, batch); err != nil {
