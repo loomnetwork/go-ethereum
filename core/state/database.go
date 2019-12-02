@@ -57,9 +57,6 @@ type Database interface {
 
 	// TrieDB retrieves the low level trie database used for data storage.
 	TrieDB() *trie.Database
-
-	// WithTrieDB set the low level trie database
-	WithTrieDB(trieDB *trie.Database) Database
 }
 
 // Trie is a Ethereum Merkle Trie.
@@ -86,16 +83,20 @@ func NewDatabase(db ethdb.Database) Database {
 	}
 }
 
+// NewDatabaseWithTrieDB creates a backing store for state from a previously created trie database.
+func NewDatabaseWithTrieDB(db *trie.Database) Database {
+	csc, _ := lru.New(codeSizeCacheSize)
+	return &cachingDB{
+		db:            db,
+		codeSizeCache: csc,
+	}
+}
+
 type cachingDB struct {
 	db            *trie.Database
 	mu            sync.Mutex
 	pastTries     []*trie.SecureTrie
 	codeSizeCache *lru.Cache
-}
-
-func (db *cachingDB) WithTrieDB(trieDB *trie.Database) Database {
-	db.db = trieDB
-	return db
 }
 
 // OpenTrie opens the main account trie.
