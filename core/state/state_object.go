@@ -78,9 +78,10 @@ type stateObject struct {
 	trie Trie // storage trie, which becomes non-nil on first access
 	code Code // contract bytecode, which gets set when code is loaded
 
-	originStorage    Storage // Storage cache of original entries to dedup rewrites
-	dirtyStorage     Storage // Storage entries that need to be flushed to disk
-	dirtyStorageKeys []common.Hash
+	originStorage    Storage       // Storage cache of original entries to dedup rewrites
+	dirtyStorage     Storage       // Storage entries that need to be flushed to disk
+	dirtyStorageKeys []common.Hash // Dirty storage keys in order of insertion into dirtyStorage
+
 	// Cache flags.
 	// When an object is marked suicided it will be delete from the trie
 	// during the "update" phase of the state transition.
@@ -112,12 +113,13 @@ func newObject(db *StateDB, address common.Address, data Account) *stateObject {
 		data.CodeHash = emptyCodeHash
 	}
 	return &stateObject{
-		db:            db,
-		address:       address,
-		addrHash:      crypto.Keccak256Hash(address[:]),
-		data:          data,
-		originStorage: make(Storage),
-		dirtyStorage:  make(Storage),
+		db:               db,
+		address:          address,
+		addrHash:         crypto.Keccak256Hash(address[:]),
+		data:             data,
+		originStorage:    make(Storage),
+		dirtyStorage:     make(Storage),
+		dirtyStorageKeys: nil,
 	}
 }
 
