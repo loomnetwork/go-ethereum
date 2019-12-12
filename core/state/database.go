@@ -121,6 +121,15 @@ func NewDatabaseWithConfig(db ethdb.Database, config *trie.Config) Database {
 	}
 }
 
+// NewDatabaseWithTrieDB creates a backing store for state from a previously created trie database.
+func NewDatabaseWithTrieDB(db *trie.Database) Database {
+	csc, _ := lru.New(codeSizeCacheSize)
+	return &cachingDB{
+		db:            db,
+		codeSizeCache: csc,
+	}
+}
+
 type cachingDB struct {
 	db            *trie.Database
 	codeSizeCache *lru.Cache
