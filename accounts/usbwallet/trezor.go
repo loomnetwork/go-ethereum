@@ -18,6 +18,8 @@
 // wallets. The wire protocol spec can be found on the SatoshiLabs website:
 // https://doc.satoshilabs.com/trezor-tech/api-protobuf.html
 
+// +build usbhubs
+
 package usbwallet
 
 import (
@@ -35,11 +37,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/golang/protobuf/proto"
 )
-
-// ErrTrezorPINNeeded is returned if opening the trezor requires a PIN code. In
-// this case, the calling application should display a pinpad and send back the
-// encoded passphrase.
-var ErrTrezorPINNeeded = errors.New("trezor: pin needed")
 
 // ErrTrezorPassphraseNeeded is returned if opening the trezor requires a passphrase
 var ErrTrezorPassphraseNeeded = errors.New("trezor: passphrase needed")
