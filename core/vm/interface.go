@@ -28,7 +28,7 @@ import (
 type StateDB interface {
 	CreateAccount(common.Address)
 
-	RawDump(excludeCode, excludeStorage, excludeMissingPreimages bool) state.Dump
+	RawDump(opts *state.DumpConfig) state.Dump
 
 	SubBalance(common.Address, *big.Int)
 	AddBalance(common.Address, *big.Int)
